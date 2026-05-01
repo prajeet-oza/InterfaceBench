@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "interfacebench"
+version = "0.1.0"
+description = "Benchmarking Universal Machine-Learned Interatomic Potentials for Solid-Solid Interfaces"
+readme = "README.md"
+authors = [{name = "Prajeet Oza", email = "prajeet@gatech.edu"}]
+license = {text = "MIT"} # Update to your preferred license
+requires-python = ">=3.9"
+dependencies = [
+    "pymatgen",
+    "ase",
+    "sqlalchemy",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "tqdm",
+    "pandas",
+    "pyyaml"
+]
+
+[project.scripts]
+# This allows users to run your CLI by just typing `interfacebench` in the terminal
+interfacebench = "interfacebench.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["interfacebench*"]
