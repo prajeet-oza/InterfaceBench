@@ -47,7 +47,7 @@ class InterfaceBuilder:
 
     def generate_interfaces(self, film: str, subs: str, film_miller: tuple, subs_miller: tuple, 
                           film_thickness: float, subs_thickness: float, gap: float = 2.0, vacuum: float = 20.0,
-                          generate_slabs: bool = True, in_layers: bool = True):
+                          generate_slabs: bool = True, generate_bulks: bool = True, in_layers: bool = True):
         """Yields interface dictionaries as they are generated."""
         film_structure = Structure.from_file(self.base_structure_loc / f"{film}.cif")
         subs_structure = Structure.from_file(self.base_structure_loc / f"{subs}.cif")
@@ -94,6 +94,21 @@ class InterfaceBuilder:
                 else:
                     film_slab_dict = None
                     subs_slab_dict = None
+                
+                if generate_bulks:
+                    film_bulk_dict = {
+                        'name': film,
+                        'natoms': len(film_structure),
+                        'structure_dict': film_structure.as_dict()
+                    }
+                    subs_bulk_dict = {
+                        'name': subs,
+                        'natoms': len(subs_structure),
+                        'structure_dict': subs_structure.as_dict()
+                    }
+                else:
+                    film_bulk_dict = None
+                    subs_bulk_dict = None
 
                 yield {
                     'film_name': film,
@@ -106,6 +121,8 @@ class InterfaceBuilder:
                     'structure_dict': struct.as_dict(),
                     'film_slab': film_slab_dict,
                     'subs_slab': subs_slab_dict,
+                    'film_bulk': film_bulk_dict,
+                    'subs_bulk': subs_bulk_dict,
                     'metadata_dict': {
                         'film_termination': termination[0],
                         'subs_termination': termination[1],
@@ -130,13 +147,13 @@ class GeneratorPipeline:
 
     def run(self, film: str, subs: str, film_miller: tuple, subs_miller: tuple,
             film_thickness: float = 10.0, subs_thickness: float = 10.0,
-            gap: float = 2.0, vacuum: float = 20.0, generate_slabs: bool = True, in_layers: bool = True):
+            gap: float = 2.0, vacuum: float = 20.0, generate_slabs: bool = True, generate_bulks: bool = True, in_layers: bool = True):
         
         logger.info(f"Starting generation pipeline for {film} and {subs}...")
         interfaces = list(self.interface_builder.generate_interfaces(
             film=film, subs=subs, film_miller=film_miller, subs_miller=subs_miller,
             film_thickness=film_thickness, subs_thickness=subs_thickness, gap=gap, vacuum=vacuum,
-            generate_slabs=generate_slabs, in_layers=in_layers
+            generate_slabs=generate_slabs, generate_bulks=generate_bulks, in_layers=in_layers
         ))
         
         if not interfaces:
@@ -149,6 +166,13 @@ class GeneratorPipeline:
                 if interface['film_slab']: slabs.append(interface['film_slab'])
                 if interface['subs_slab']: slabs.append(interface['subs_slab'])
             self.db_manager.deduplicate_and_save_slabs(slabs)
+        
+        if generate_bulks:
+            bulks = []
+            for interface in interfaces:
+                if interface['film_bulk']: bulks.append(interface['film_bulk'])
+                if interface['subs_bulk']: bulks.append(interface['subs_bulk'])
+            self.db_manager.deduplicate_and_save_bulks(bulks)
 
         self.db_manager.deduplicate_and_save_interfaces(interfaces)
         logger.info(f"Successfully generated and saved {len(interfaces)} interfaces.")

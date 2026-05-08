@@ -5,6 +5,14 @@ from monty.json import MontyEncoder, MontyDecoder
 
 Base = declarative_base()
 
+class BulkRecord(Base):
+    __tablename__ = 'bulks'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    natoms = Column(Integer, nullable=False)
+    structure_dict = Column(JSON, nullable=False)  # Stores pymatgen .as_dict()
+
 class SlabRecord(Base):
     __tablename__ = 'slabs'
     
@@ -21,6 +29,8 @@ class InterfaceRecord(Base):
     id = Column(Integer, primary_key=True)
     film_id = Column(Integer, ForeignKey('slabs.id'))
     subs_id = Column(Integer, ForeignKey('slabs.id'))
+    film_bulk_id = Column(Integer, ForeignKey('bulks.id'))
+    subs_bulk_id = Column(Integer, ForeignKey('bulks.id'))
     natoms = Column(Integer, nullable=False)
     structure_dict = Column(JSON, nullable=False)
     metadata_dict = Column(JSON, nullable=True)
@@ -28,6 +38,8 @@ class InterfaceRecord(Base):
     # Establish relational mapping
     film = relationship("SlabRecord", foreign_keys=[film_id])
     subs = relationship("SlabRecord", foreign_keys=[subs_id])
+    film_bulk = relationship("BulkRecord", foreign_keys=[film_bulk_id])
+    subs_bulk = relationship("BulkRecord", foreign_keys=[subs_bulk_id])
 
     simulations = relationship("SimulationRecord", back_populates="interface")
 

@@ -6,6 +6,7 @@ from pymatgen.core import Structure
 from interfacebench.generators.db_manager import DatabaseManager
 from interfacebench.generators.db_schema import InterfaceRecord
 from interfacebench.generators.db_schema import SlabRecord
+from interfacebench.generators.db_schema import BulkRecord
 from .db_schema import SimulationRecord
 
 logger = logging.getLogger(__name__)
@@ -96,18 +97,13 @@ class AseScheduler:
                     logger.info(f"Generated ASE {sim_type} inputs for slab {cif_name} with {tag}")
 
             # 3. Schedule Bulks
-            if sim_type == "relax" and bulk_cif_dir:
-                bulk_cif_dir = Path(bulk_cif_dir)
-                slabs = session.query(SlabRecord).all()
-                bulk_names = set(record.base_name for record in slabs)
+            if sim_type == "relax":
+                bulks = session.query(BulkRecord).all()
                 
-                for b_name in bulk_names:
-                    cif_path = bulk_cif_dir / f"{b_name}.cif"
-                    if not cif_path.exists():
-                        logger.warning(f"CIF not found for bulk {b_name} at {cif_path}")
-                        continue
-                        
-                    struct = Structure.from_file(cif_path)
+                for bulk_record in bulks:
+                    b_name = bulk_record.name
+                    struct_data = bulk_record.structure_dict
+                    struct = struct_data if isinstance(struct_data, Structure) else Structure.from_dict(struct_data)
                     
                     for model_dict in models:
                         tag = model_dict['tag']
@@ -118,7 +114,7 @@ class AseScheduler:
                         if existing:
                             continue
                             
-                        calc_folder = self.work_dir / f"ase_{sim_type}_bulk_{b_name}_{tag}"
+                        calc_folder = self.work_dir / f"ase_{sim_type}_bulk_{b_name}_{bulk_record.id}_{tag}"
                         calc_folder.mkdir(parents=True, exist_ok=True)
                         struct.to(filename=str(calc_folder / "POSCAR"))
                         
@@ -160,22 +156,26 @@ atoms.calc = {model_code}
 # Load kwargs
 with open("kwargs_config.json", "r") as f:
     kwargs = json.load(f)
+"""
+        
+        if sim_type == "relax":
+            script_content += """
+opt_name = kwargs.get('optimizer', 'BFGS')
+optimizer_cls = getattr(ase.optimize, opt_name)
+if kwargs.get('volume_relax'):
+    atoms = UnitCellFilter(atoms)
+relax = optimizer_cls(atoms, trajectory='relax.traj', logfile='relax.log')
+relax.run(fmax=kwargs.get('fmax', 0.05), steps=kwargs.get('maxstep', 1000))
+"""
 
-if "{sim_type}" == "relax":
-    opt_name = kwargs.get('optimizer', 'BFGS')
-    optimizer_cls = getattr(ase.optimize, opt_name)
-    if kwargs.get('volume_relax'):
-        atoms = UnitCellFilter(atoms)
-    relax = optimizer_cls(atoms, trajectory='relax.traj', logfile='relax.log')
-    relax.run(fmax=kwargs.get('fmax', 0.05), steps=kwargs.get('maxstep', 1000))
-
-elif "{sim_type}" == "md":
-    timestep = kwargs.get('timestep', 1.0)
-    temperature = kwargs.get('temperature', 300)
-    dyn = NoseHooverChainNVT(atoms, timestep=timestep, temperature_K=temperature, tdamp=timestep*100)
-    dyn.attach(MDLogger(dyn, atoms, 'md.log', header=True, stress=True, mode='w'))
-        traj = Trajectory('md.traj', 'w', atoms)
-        dyn.attach(traj.write, interval=kwargs.get('traj_interval', 10))
-    dyn.run(steps=kwargs.get('numsteps', 1000))
+        elif sim_type == "md":
+            script_content += """
+timestep = kwargs.get('timestep', 1.0)
+temperature = kwargs.get('temperature', 300)
+dyn = NoseHooverChainNVT(atoms, timestep=timestep, temperature_K=temperature, tdamp=timestep*100)
+dyn.attach(MDLogger(dyn, atoms, 'md.log', header=True, stress=True, mode='w'))
+traj = Trajectory('md.traj', 'w', atoms)
+dyn.attach(traj.write, interval=kwargs.get('traj_interval', 10))
+dyn.run(steps=kwargs.get('numsteps', 1000))
 """
         (calc_folder / "run_ase.py").write_text(script_content)

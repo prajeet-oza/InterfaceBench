@@ -9,7 +9,7 @@ InterfaceBench solves the combinatorially large task of generating, deduplicatin
 ## Core Capabilities
 * **Combinatorial Structure Generation**: Automatically slices and aligns bulk phases to generate symmetry-distinct film and substrate combinations using Coherent Interface Builders.
 * **Thermodynamic Data Lineage**: Foreign-key-enforced relational SQL tracking ensures interface energies are strictly calculated against their identically-configured parent slab states. 
-* **$O(N)$ Grouped Deduplication**: A fast atom-count grouping algorithm bypasses the traditional global $O(N^2)$ structure matching bottleneck.
+* **$O(k.G^2)$ Grouped Deduplication**: A fast atom-count grouping algorithm bypasses the traditional global $O(N^2)$ structure matching bottleneck.
 * **Idempotent Headless Simulation**: Safe execution architecture across HPC systems using self-contained JSON/Python scripts for VASP (DFT) and ASE (MLIPs).
 * **Physical Fidelity Metrics**: Extensive tracking of interfacial phenomena ranging from static CN deviations and Radial Distribution divergence to dynamic minimum distances, Lindemann indices, and Maxwell-Boltzmann thermodynamics checks.
 

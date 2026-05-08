@@ -2,7 +2,7 @@ import logging
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.structure import Structure
 from sqlalchemy.orm import sessionmaker
-from .db_schema import init_db, SlabRecord, InterfaceRecord
+from .db_schema import init_db, SlabRecord, InterfaceRecord, BulkRecord
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +11,48 @@ class DatabaseManager:
         self.engine = init_db(db_path)
         self.SessionLocal = sessionmaker(bind=self.engine)
         self.matcher = StructureMatcher()
+    
+    def deduplicate_and_save_bulks(self, generated_bulks: list[dict]):
+        """
+        Deduplicates a list of bulk structure dictionaries in memory and saves unique records to the database.
+        """
+        unique_bulks = []
+        
+        for bulk in generated_bulks:
+            new_struct = Structure.from_dict(bulk['structure_dict'])
+            is_duplicate = False
+            
+            for accepted_bulk in unique_bulks:
+                accepted_struct = Structure.from_dict(accepted_bulk['structure_dict'])
+                if self.matcher.fit(new_struct, accepted_struct):
+                    is_duplicate = True
+                    break
+                    
+            if not is_duplicate:
+                unique_bulks.append(bulk)
+
+        # Save to database
+        with self.SessionLocal() as session:
+            saved_count = 0
+            for bulk_data in unique_bulks:
+                new_struct = Structure.from_dict(bulk_data['structure_dict'])
+                existing_records = session.query(BulkRecord).filter_by(name=bulk_data['name']).all()
+                
+                is_db_duplicate = any(
+                    self.matcher.fit(new_struct, rec.structure_dict if isinstance(rec.structure_dict, Structure) else Structure.from_dict(rec.structure_dict))
+                    for rec in existing_records
+                )
+                        
+                if not is_db_duplicate:
+                    record = BulkRecord(
+                        name=bulk_data['name'],
+                        natoms=bulk_data['natoms'],
+                        structure_dict=bulk_data['structure_dict']
+                    )
+                    session.add(record)
+                    saved_count += 1
+            session.commit()
+            logger.info(f"Saved {saved_count} unique bulks out of {len(generated_bulks)} generated.")
 
     def deduplicate_and_save_slabs(self, generated_slabs: list[dict]):
         """
@@ -33,7 +75,7 @@ class DatabaseManager:
                 for accepted_slab_dict in [s for s in unique_slabs if s['natoms'] == natoms]:
                     accepted_struct = Structure.from_dict(accepted_slab_dict['structure_dict'])
                     
-                    if self.matcher.fit(new_struct, accepted_struct):
+                    if self.matcher.fit(new_struct, accepted_struct) and new_slab_dict['miller'] == accepted_slab_dict['miller']:
                         is_duplicate = True
                         break
                         
@@ -100,16 +142,27 @@ class DatabaseManager:
                 # Find parent slabs by base_name, miller, and termination
                 film_record = session.query(SlabRecord).filter_by(
                     base_name=int_data['film_name'], miller=int_data['film_miller'],
-                    termination=str(int_data['film_termination'])
+                    # termination=str(int_data['film_termination'])
                 ).first()
 
                 subs_record = session.query(SlabRecord).filter_by(
                     base_name=int_data['subs_name'], miller=int_data['subs_miller'],
-                    termination=str(int_data['subs_termination'])
+                    # termination=str(int_data['subs_termination'])
                 ).first()
 
                 film_id = film_record.id if film_record else None
                 subs_id = subs_record.id if subs_record else None
+
+                film_bulk_record = session.query(BulkRecord).filter_by(
+                    name=int_data['film_name']
+                ).first()
+
+                subs_bulk_record = session.query(BulkRecord).filter_by(
+                    name=int_data['subs_name']
+                ).first()
+
+                film_bulk_id = film_bulk_record.id if film_bulk_record else None
+                subs_bulk_id = subs_bulk_record.id if subs_bulk_record else None
 
                 if film_id is None or subs_id is None:
                     logger.info(f"Missing parent slabs for interface between "
@@ -120,6 +173,8 @@ class DatabaseManager:
                 new_interface = InterfaceRecord(
                     film_id=film_id,
                     subs_id=subs_id,
+                    film_bulk_id=film_bulk_id,
+                    subs_bulk_id=subs_bulk_id,
                     natoms=int_data['natoms'],
                     structure_dict=int_data['structure_dict'],
                     metadata_dict=int_data.get('metadata_dict', {})
